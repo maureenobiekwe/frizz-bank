@@ -1,0 +1,89 @@
+name: bank_ui_kit
+description: A themeable Flutter UI component library for mobile banking and fintech apps. RTL-aware, privacy-aware, accessible widgets that compose into any host app.
+version: 0.3.0
+homepage: https://github.com/maureenobiekwe/frizz-bank
+repository: https://github.com/maureenobiekwe/frizz-bank
+issue_tracker: https://github.com/maureenobiekwe/frizz-bank/issues
+documentation: https://github.com/maureenobiekwe/frizz-bank#readme
+topics:
+  - banking
+  - fintech
+  - ui
+  - widgets
+  - design-system
+
+screenshots:
+  - description: Heritage preset, an Islamic-banking-ready design language.
+    path: screenshots/01-heritage-home.png
+  - description: Studio preset, the restrained editorial default.
+    path: screenshots/02-studio-home.png
+  - description: Voltage preset in dark mode, electric and gradient-led.
+    path: screenshots/03-voltage-home.png
+  - description: Bloom preset, warm and consumer-friendly.
+    path: screenshots/04-bloom-home.png
+  - description: Virtual and physical card widgets with controls.
+    path: screenshots/05-cards.png
+
+environment:
+  sdk: '>=3.5.0 <4.0.0'
+  flutter: '>=3.44.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  decimal: ^3.0.0
+  intl: ^0.20.1
+  fl_chart: ^1.2.0
+  collection: ^1.19.0
+  qr: ^4.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+  fonts:
+    - family: SpaceGrotesk
+      fonts:
+        - asset: lib/src/assets/fonts/SpaceGrotesk-Regular.ttf
+          weight: 400
+        - asset: lib/src/assets/fonts/SpaceGrotesk-Medium.ttf
+          weight: 500
+        - asset: lib/src/assets/fonts/SpaceGrotesk-SemiBold.ttf
+          weight: 600
+        - asset: lib/src/assets/fonts/SpaceGrotesk-Bold.ttf
+          weight: 700
+    - family: Fredoka
+      fonts:
+        - asset: lib/src/assets/fonts/Fredoka-Regular.ttf
+          weight: 400
+        - asset: lib/src/assets/fonts/Fredoka-Medium.ttf
+          weight: 500
+        - asset: lib/src/assets/fonts/Fredoka-SemiBold.ttf
+          weight: 600
+    - family: Nunito
+      fonts:
+        - asset: lib/src/assets/fonts/Nunito-Regular.ttf
+          weight: 400
+        - asset: lib/src/assets/fonts/Nunito-Medium.ttf
+          weight: 500
+        - asset: lib/src/assets/fonts/Nunito-SemiBold.ttf
+          weight: 600
+        - asset: lib/src/assets/fonts/Nunito-Bold.ttf
+          weight: 700
+    - family: NotoSansCurrency
+      fonts:
+        - asset: lib/src/assets/fonts/NotoSansCurrency-Regular.ttf
+    - family: NotoSansArabic
+      fonts:
+        - asset: lib/src/assets/fonts/NotoSansArabic-Regular.ttf
+    - family: NotoSansDevanagari
+      fonts:
+        - asset: lib/src/assets/fonts/NotoSansDevanagari-Regular.ttf
+    - family: NotoSerifDisplay
+      fonts:
+        - asset: lib/src/assets/fonts/NotoSerifDisplay-Regular.ttf
+        - asset: lib/src/assets/fonts/NotoSerifDisplay-SemiBold.ttf
+          weight: 600

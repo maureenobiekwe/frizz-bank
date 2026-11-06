@@ -1,0 +1,272 @@
+// Screenshot harness for automated documentation captures.
+//
+// Renders a single screen OR a single gallery component with a chosen preset /
+// brightness, selected entirely from the URL query string so an external
+// driver (Playwright) can capture the full matrix deterministically.
+//
+// Screen mode (existing):
+//   index.html?screen=home&preset=voltage&dark=1
+//
+// Component mode (new: renders one gallery entry with default params):
+//   index.html?component=BankBalanceText&preset=studio&dark=0
+//
+// This is NOT the app users run: see main.dart for the interactive gallery.
+import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
+
+import 'package:bank_ui_kit/core.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
+
+import 'demo/flagship/flagship_apply.dart';
+import 'demo/flagship/flagship_catalog.dart';
+import 'demo/flagship/flagship_currencies.dart';
+import 'demo/flagship/flagship_home.dart';
+import 'demo/flagship/flagship_my_cards.dart';
+import 'demo/flagship/flagship_my_products.dart';
+import 'demo/flagship/flagship_product_detail.dart';
+import 'demo/heritage_dashboard.dart';
+import 'demo/home_dashboard.dart';
+import 'gallery/component_registry.dart';
+import 'screens/accounts_screen.dart';
+import 'screens/auth_screen.dart';
+import 'screens/cards_screen.dart';
+import 'screens/credit_screen.dart';
+import 'screens/insights_screen.dart';
+import 'screens/investing_screen.dart';
+import 'screens/notifications_screen.dart';
+import 'screens/onboarding_screen.dart';
+import 'screens/saving_screen.dart';
+import 'screens/social_screen.dart';
+import 'screens/states_screen.dart';
+import 'screens/subscriptions_screen.dart';
+import 'screens/transactions_screen.dart';
+import 'screens/transfers_screen.dart';
+
+final Map<String, Widget Function()> _screens = {
+  'home': HomeDashboard.new,
+  'heritage': HeritageDashboard.new,
+  'flagship-home': FlagshipHome.new,
+  'flagship-catalog': FlagshipCatalog.new,
+  'flagship-product': FlagshipProductDetail.new,
+  'flagship-apply': () => const FlagshipApplyFlow(initialStep: 2),
+  'flagship-my-products': FlagshipMyProducts.new,
+  'flagship-my-cards': FlagshipMyCards.new,
+  'flagship-currencies': FlagshipCurrencies.new,
+  'states': StatesScreen.new,
+  'accounts': AccountsScreen.new,
+  'transactions': TransactionsScreen.new,
+  'transfers': TransfersScreen.new,
+  'cards': CardsScreen.new,
+  'auth': AuthScreen.new,
+  'onboarding': OnboardingScreen.new,
+  'saving': SavingScreen.new,
+  'social': SocialScreen.new,
+  'investing': InvestingScreen.new,
+  'credit': CreditScreen.new,
+  'subscriptions': SubscriptionsScreen.new,
+  'insights': InsightsScreen.new,
+  'notifications': NotificationsScreen.new,
+};
+
+BankPreset _presetFromName(String? name) => switch (name) {
+      'voltage' => BankPreset.voltage,
+      'bloom' => BankPreset.bloom,
+      'heritage' => BankPreset.heritage,
+      _ => BankPreset.studio,
+    };
+
+void main() {
+  final params = Uri.base.queryParameters;
+  final preset = _presetFromName(params['preset']);
+  final dark = params['dark'] == '1';
+  final rtl = params['dir'] == 'rtl';
+
+  final base = dark ? ThemeData.dark() : ThemeData.light();
+  // The preset already wires the kit's bundled glyph-coverage fallback fonts
+  // (kBankFontFallback: currency symbols, Arabic, Devanagari), so captures
+  // render every script even though the browser can't fetch remote Noto.
+  final theme = preset.apply(base);
+
+  // ── Component mode ─────────────────────────────────────────────────────────
+  final componentName = params['component'];
+  if (componentName != null) {
+    final entry = kGalleryEntries.firstWhere(
+      (e) => e.name == componentName,
+      orElse: () => kGalleryEntries.first,
+    );
+    final defaultParams = {
+      for (final p in entry.params) p.name: p.defaultValue
+    };
+
+    // Auto-present modal/sheet entries (GalleryEntry.autoOpen) on the first
+    // frame so captures show the real surface instead of the launcher pill.
+    galleryAutoPresentOverlays = true;
+
+    runApp(
+      BankUiScope(
+        initialData: BankUiScopeData(preset: preset),
+        child: MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: theme,
+          home: _ComponentShotPage(entry: entry, params: defaultParams),
+        ),
+      ),
+    );
+    return;
+  }
+
+  // ── Screen mode (existing) ─────────────────────────────────────────────────
+  final screenKey = params['screen'] ?? 'home';
+  // The apply flow can be pinned to a specific step via ?step=N so the
+  // documentation walkthrough can capture every stage of the journey.
+  Widget Function() builder;
+  if (screenKey == 'flagship-apply') {
+    final step = int.tryParse(params['step'] ?? '2') ?? 2;
+    builder = () => FlagshipApplyFlow(initialStep: step);
+  } else {
+    builder = _screens[screenKey] ?? _screens['home']!;
+  }
+
+  runApp(
+    BankUiScope(
+      initialData: BankUiScopeData(preset: preset),
+      child: MaterialApp(
+        debugShowCheckedModeBanner: false,
+        theme: theme,
+        home: Directionality(
+          textDirection: rtl ? TextDirection.rtl : TextDirection.ltr,
+          child: builder(),
+        ),
+      ),
+    ),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Component shot page
+// ---------------------------------------------------------------------------
+
+class _ComponentShotPage extends StatelessWidget {
+  const _ComponentShotPage({required this.entry, required this.params});
+
+  final GalleryEntry entry;
+  final Map<String, dynamic> params;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget child;
+    try {
+      child = entry.builder(context, params);
+    } catch (e) {
+      child = Center(
+        child: Text(
+          'Preview error: $e',
+          style: const TextStyle(color: Colors.red, fontSize: 12),
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
+
+    // Report the content's on-screen bounds so the capture driver can crop
+    // the fixed-height viewport down to the rendered widget. Auto-opened
+    // overlay entries are excluded: there the surface worth capturing is the
+    // sheet/dialog route, not the launcher, so the full viewport is kept.
+    if (!entry.autoOpen) {
+      child = _ContentBoundsReporter(child: child);
+    }
+
+    if (entry.isFullScreen) {
+      // `isFullScreen` means "let this entry span the full container width"
+      // (list tiles, banners, app bars — see GalleryEntry.isFullScreen): it is
+      // a width directive, not a height one. Handing the child the whole
+      // viewport height stretched every root `Column` (which defaults to
+      // MainAxisSize.max) and every `Align` to 812 px, so the bounds reporter
+      // measured the stretched box and the capture kept a huge empty void
+      // below the widget.
+      //
+      // Keep the full-bleed width but hand the child an *unbounded* height so
+      // it settles at its intrinsic height and the driver can crop to it.
+      // Loosening alone is not enough: a `Column` with MainAxisSize.max still
+      // consumes a loose maxHeight, so the constraint has to be removed.
+      // Entries whose canonical surface really is a whole screen opt out via
+      // `fillsViewport` and keep the bounded full-viewport layout, which their
+      // root `Expanded`/`ListView` children require.
+      return Scaffold(
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        body: entry.fillsViewport
+            ? child
+            : ConstraintsTransformBox(
+                alignment: Alignment.topCenter,
+                constraintsTransform:
+                    ConstraintsTransformBox.heightUnconstrained,
+                child: child,
+              ),
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 32),
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Content bounds reporting (component mode)
+// ---------------------------------------------------------------------------
+
+/// Publishes the wrapped child's global top offset and height (logical px ==
+/// CSS px at deviceScaleFactor 1) on `window.__bankShotContentTop` /
+/// `window.__bankShotContentHeight` after layout, re-measuring for a short
+/// window so late reflows (font loading) are picked up before the driver
+/// reads the values and crops the screenshot (tool/screenshots.mjs).
+class _ContentBoundsReporter extends StatefulWidget {
+  const _ContentBoundsReporter({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_ContentBoundsReporter> createState() => _ContentBoundsReporterState();
+}
+
+class _ContentBoundsReporterState extends State<_ContentBoundsReporter> {
+  static const _remeasureTicks = 8;
+  int _ticks = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleMeasure();
+  }
+
+  void _scheduleMeasure() {
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _publish();
+      if (++_ticks < _remeasureTicks) {
+        Future<void>.delayed(const Duration(milliseconds: 250), () {
+          if (mounted) _scheduleMeasure();
+        });
+      }
+    });
+  }
+
+  void _publish() {
+    final box = context.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return;
+    final top = box.localToGlobal(Offset.zero).dy;
+    globalContext['__bankShotContentTop'] = top.toJS;
+    globalContext['__bankShotContentHeight'] = box.size.height.toJS;
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
+}

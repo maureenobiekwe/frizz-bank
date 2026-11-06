@@ -1,0 +1,86 @@
+name: Deploy demo to GitHub Pages
+
+# Builds the interactive component gallery + Meridian flagship app (the
+# example app's default entrypoint, lib/main.dart) as a Flutter web app and
+# publishes it to GitHub Pages on every push to main.
+#
+# One-time setup: in the repository settings, set Pages -> Build and
+# deployment -> Source to "GitHub Actions".
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Least privilege by default: the build job only reads, and the Pages write
+# and OIDC grants live on the deploy job that actually needs them.
+permissions:
+  contents: read
+
+# Only one deploy at a time.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build web demo
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      # Actions are pinned by commit SHA, not by tag, so a compromised or
+      # retagged release cannot silently enter this build (OpenSSF Scorecard,
+      # Pinned-Dependencies). The trailing comment records the tag the SHA
+      # belongs to; update both together.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: '3.44.4'
+          channel: stable
+          cache: true
+
+      - name: Install example dependencies
+        working-directory: example
+        run: flutter pub get
+
+      # base-href must match the project-pages path (the repository name) so
+      # the app's asset URLs resolve under https://<owner>.github.io/<repo>/.
+      # CanvasKit is bundled locally (--no-web-resources-cdn) so the demo is
+      # fully self-contained and does not depend on a third-party CDN.
+      - name: Build web (gallery + flagship)
+        working-directory: example
+        run: >-
+          flutter build web
+          --release
+          --base-href /frizz-bank/
+          --no-web-resources-cdn
+          --no-tree-shake-icons
+
+      # SPA fallback: copy index.html to 404.html so deep links do not 404.
+      - name: Add SPA 404 fallback
+        working-directory: example
+        run: cp build/web/index.html build/web/404.html
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
+        with:
+          path: example/build/web
+
+  deploy:
+    name: Deploy to Pages
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write # publish the built site
+      id-token: write # OIDC token the Pages deployment is verified with
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5

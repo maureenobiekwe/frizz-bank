@@ -1,0 +1,311 @@
+import 'package:flutter/widgets.dart';
+
+import '../theme/extensions.dart';
+import '../theme/numeral_style.dart';
+import 'bank_ui_strings.dart';
+
+/// Immutable snapshot of the runtime configuration for the Bank UI Kit.
+///
+/// An instance lives inside [BankUiScope] and is propagated through the
+/// widget tree via [_BankUiScopeInherited]. Widgets read it with
+/// [BankUiScope.of].
+@immutable
+class BankUiScopeData {
+  final bool privacyEnabled;
+  final BankPreset preset;
+  final BankUiStrings strings;
+  final NumeralStyle numeralStyle;
+
+  /// When `true`, labels such as APR are replaced with Islamic-finance
+  /// equivalents (e.g. "Profit rate") sourced from [strings].
+  final bool islamicFinanceMode;
+
+  /// Maps an image URL to the [ImageProvider] used to load it.
+  ///
+  /// Lets host apps override how URL-based images (payee avatars,
+  /// merchant logos, card previews) are fetched, e.g. to pin a CDN, add
+  /// authentication headers, or serve bundled assets in air-gapped
+  /// builds. When null, widgets fall back to [NetworkImage].
+  final ImageProvider Function(String url)? imageResolver;
+
+  /// Builds the country-flag visual for an ISO 3166-1 alpha-2 code.
+  ///
+  /// Lets host apps override how `BankCountryFlag` (and therefore every
+  /// flag-bearing widget: country picker, phone field, address card,
+  /// travel notice) renders flags — e.g. to plug in bundled flag artwork,
+  /// an SVG set, or a CDN-backed image. The returned widget is laid out
+  /// inside a box of exactly [Size], so builders should fill it (e.g. with
+  /// `BoxFit.cover`). When null, `BankCountryFlag` falls back to its
+  /// built-in rendering (a crafted ISO-code chip by default).
+  final Widget Function(BuildContext context, String isoCode, Size size)?
+      flagBuilder;
+
+  const BankUiScopeData({
+    this.privacyEnabled = false,
+    this.preset = BankPreset.studio,
+    this.strings = BankUiStrings.defaults,
+    this.numeralStyle = NumeralStyle.western,
+    this.islamicFinanceMode = false,
+    this.imageResolver,
+    this.flagBuilder,
+  });
+
+  BankUiScopeData copyWith({
+    bool? privacyEnabled,
+    BankPreset? preset,
+    BankUiStrings? strings,
+    NumeralStyle? numeralStyle,
+    bool? islamicFinanceMode,
+    ImageProvider Function(String url)? imageResolver,
+    Widget Function(BuildContext context, String isoCode, Size size)?
+        flagBuilder,
+  }) =>
+      BankUiScopeData(
+        privacyEnabled: privacyEnabled ?? this.privacyEnabled,
+        preset: preset ?? this.preset,
+        strings: strings ?? this.strings,
+        numeralStyle: numeralStyle ?? this.numeralStyle,
+        islamicFinanceMode: islamicFinanceMode ?? this.islamicFinanceMode,
+        imageResolver: imageResolver ?? this.imageResolver,
+        flagBuilder: flagBuilder ?? this.flagBuilder,
+      );
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is BankUiScopeData &&
+        other.privacyEnabled == privacyEnabled &&
+        other.preset == preset &&
+        other.strings == strings &&
+        other.numeralStyle == numeralStyle &&
+        other.islamicFinanceMode == islamicFinanceMode &&
+        other.imageResolver == imageResolver &&
+        other.flagBuilder == flagBuilder;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+        privacyEnabled,
+        preset,
+        strings,
+        numeralStyle,
+        islamicFinanceMode,
+        imageResolver,
+        flagBuilder,
+      );
+}
+
+// ---------------------------------------------------------------------------
+// Public widget
+// ---------------------------------------------------------------------------
+
+/// Provides Bank UI Kit configuration to the subtree.
+///
+/// Wrap the application (or the portion that uses Bank UI Kit widgets) with
+/// this widget so every descendant can read [BankUiScopeData] and call
+/// mutation methods via [BankUiScope.controllerOf].
+///
+/// ```dart
+/// BankUiScope(
+///   initialData: BankUiScopeData(
+///     preset: BankPreset.voltage,
+///     islamicFinanceMode: true,
+///   ),
+///   child: MyApp(),
+/// )
+/// ```
+class BankUiScope extends StatefulWidget {
+  final BankUiScopeData initialData;
+  final Widget child;
+
+  const BankUiScope({
+    required this.child,
+    super.key,
+    this.initialData = const BankUiScopeData(),
+  });
+
+  // ---------------------------------------------------------------------------
+  // Static accessors
+  // ---------------------------------------------------------------------------
+
+  /// Returns the nearest [BankUiScopeData] from the widget tree.
+  ///
+  /// Descendants are rebuilt whenever the data changes.
+  ///
+  /// Throws a [FlutterError] if no [BankUiScope] ancestor is found.
+  static BankUiScopeData of(BuildContext context) {
+    final inherited =
+        context.dependOnInheritedWidgetOfExactType<_BankUiScopeInherited>();
+    assert(
+      inherited != null,
+      'BankUiScope.of() called with a context that does not contain a '
+      'BankUiScope widget. Make sure BankUiScope is an ancestor of the '
+      'widget that calls BankUiScope.of().',
+    );
+    return inherited!.data;
+  }
+
+  /// Returns the [BankUiScopeController] that allows callers to mutate the
+  /// scope data without a full rebuild of the [BankUiScope] itself.
+  ///
+  /// Throws a [FlutterError] if no [BankUiScope] ancestor is found.
+  static BankUiScopeController controllerOf(BuildContext context) {
+    final inherited =
+        context.getInheritedWidgetOfExactType<_BankUiScopeInherited>();
+    assert(
+      inherited != null,
+      'BankUiScope.controllerOf() called with a context that does not contain '
+      'a BankUiScope widget. Make sure BankUiScope is an ancestor of the '
+      'widget that calls BankUiScope.controllerOf().',
+    );
+    return inherited!.controller;
+  }
+
+  /// Resolves [url] to an [ImageProvider].
+  ///
+  /// Uses the nearest [BankUiScopeData.imageResolver] when one is set;
+  /// otherwise, or when no [BankUiScope] ancestor exists, falls back to
+  /// [NetworkImage]. Registers an inherited dependency, so callers
+  /// rebuild when the scope data (including the resolver) changes.
+  static ImageProvider imageProviderFor(BuildContext context, String url) {
+    final inherited =
+        context.dependOnInheritedWidgetOfExactType<_BankUiScopeInherited>();
+    final resolver = inherited?.data.imageResolver;
+    return resolver != null ? resolver(url) : NetworkImage(url);
+  }
+
+  /// Builds the host-supplied flag widget for [isoCode], if any.
+  ///
+  /// Returns the widget produced by the nearest
+  /// [BankUiScopeData.flagBuilder], or `null` when no builder is set or no
+  /// [BankUiScope] ancestor exists — in which case `BankCountryFlag` falls
+  /// back to its built-in rendering. Registers an inherited dependency, so
+  /// callers rebuild when the scope data (including the builder) changes.
+  static Widget? flagFor(BuildContext context, String isoCode, Size size) {
+    final inherited =
+        context.dependOnInheritedWidgetOfExactType<_BankUiScopeInherited>();
+    return inherited?.data.flagBuilder?.call(context, isoCode, size);
+  }
+
+  @override
+  State<BankUiScope> createState() => _BankUiScopeState();
+}
+
+// ---------------------------------------------------------------------------
+// Controller (exposed to descendants via _BankUiScopeInherited)
+// ---------------------------------------------------------------------------
+
+/// Provides mutation methods for [BankUiScopeData].
+///
+/// Obtain an instance with [BankUiScope.controllerOf].
+abstract class BankUiScopeController {
+  /// Flips [BankUiScopeData.privacyEnabled].
+  void togglePrivacy();
+
+  /// Sets [BankUiScopeData.privacyEnabled] to [enabled].
+  void setPrivacy(bool enabled);
+
+  /// Switches the active [BankPreset].
+  void setPreset(BankPreset preset);
+
+  /// Switches the active [NumeralStyle].
+  void setNumeralStyle(NumeralStyle style);
+
+  /// Enables or disables Islamic finance mode (swaps APR labels for
+  /// profit-rate labels throughout the kit).
+  void setIslamicFinanceMode(bool enabled);
+}
+
+/// Concrete [BankUiScopeController] backed by a [_BankUiScopeState].
+///
+/// Obtain an instance with [BankUiScope.controllerOf]. The controller holds a
+/// direct reference to [_BankUiScopeState] and triggers rebuilds via
+/// `setState` so only [_BankUiScopeInherited] and its dependents rebuild.
+class _BankUiScopeController implements BankUiScopeController {
+  _BankUiScopeController(this._state);
+
+  final _BankUiScopeState _state;
+
+  /// Flips [BankUiScopeData.privacyEnabled].
+  @override
+  void togglePrivacy() => _state._updateData(
+        _state._data.copyWith(
+          privacyEnabled: !_state._data.privacyEnabled,
+        ),
+      );
+
+  /// Sets [BankUiScopeData.privacyEnabled] to [enabled].
+  @override
+  void setPrivacy(bool enabled) =>
+      _state._updateData(_state._data.copyWith(privacyEnabled: enabled));
+
+  /// Switches the active [BankPreset].
+  @override
+  void setPreset(BankPreset preset) =>
+      _state._updateData(_state._data.copyWith(preset: preset));
+
+  /// Switches the active [NumeralStyle].
+  @override
+  void setNumeralStyle(NumeralStyle style) =>
+      _state._updateData(_state._data.copyWith(numeralStyle: style));
+
+  /// Enables or disables Islamic finance mode (swaps APR labels for
+  /// profit-rate labels throughout the kit).
+  @override
+  void setIslamicFinanceMode(bool enabled) =>
+      _state._updateData(_state._data.copyWith(islamicFinanceMode: enabled));
+}
+
+// ---------------------------------------------------------------------------
+// InheritedWidget
+// ---------------------------------------------------------------------------
+
+class _BankUiScopeInherited extends InheritedWidget {
+  final BankUiScopeData data;
+  final _BankUiScopeController controller;
+
+  const _BankUiScopeInherited({
+    required this.data,
+    required this.controller,
+    required super.child,
+  });
+
+  @override
+  bool updateShouldNotify(_BankUiScopeInherited old) => data != old.data;
+}
+
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+
+class _BankUiScopeState extends State<BankUiScope> {
+  late BankUiScopeData _data;
+  late _BankUiScopeController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _data = widget.initialData;
+    _controller = _BankUiScopeController(this);
+  }
+
+  @override
+  void didUpdateWidget(BankUiScope oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialData != oldWidget.initialData) {
+      _data = widget.initialData;
+    }
+  }
+
+  void _updateData(BankUiScopeData next) {
+    if (next == _data) return;
+    setState(() => _data = next);
+  }
+
+  @override
+  Widget build(BuildContext context) => _BankUiScopeInherited(
+        data: _data,
+        controller: _controller,
+        child: widget.child,
+      );
+}

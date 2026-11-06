@@ -1,0 +1,384 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import '../../src/theme/bank_theme_data.dart';
+import '../../src/theme/button_text_style.dart';
+import '../../src/theme/tokens.dart';
+
+/// Describes the severity and colour of a [BankToastBanner].
+enum BankToastVariant { success, error, info, warning }
+
+/// A toast-style banner that slides in from the top of its parent.
+///
+/// The host app controls visibility via [isVisible]. When [isVisible] becomes
+/// `true` the banner animates in and, after [autoHideDuration], calls
+/// [onDismiss] so the host can set [isVisible] back to `false`.
+///
+/// Colours: the banner is a neutral [BankThemeData.surface] card washed with
+/// a 10%-alpha semantic tint, wrapped in a [BankTokens.hairlineWidth]
+/// hairline, with [BankThemeData.onSurface] message text — never a
+/// full-saturation colour slab. The leading icon (and action label) carry
+/// the semantic colour, brightness-aware:
+/// - [BankToastVariant.success]  [BankTokens.success] / [BankTokens.successDark]
+/// - [BankToastVariant.error]    [BankTokens.danger] / [BankTokens.dangerDark]
+/// - [BankToastVariant.info]     [BankThemeData.primary]
+/// - [BankToastVariant.warning]  [BankTokens.warning] / [BankTokens.warningDark]
+///
+/// Accessibility: the widget is marked as a `liveRegion` so screen readers
+/// announce the [message] as soon as it appears.
+///
+/// ```dart
+/// BankToastBanner(
+///   variant: BankToastVariant.success,
+///   message: 'Payment sent successfully.',
+///   isVisible: _showToast,
+///   onDismiss: () => setState(() => _showToast = false),
+/// )
+/// ```
+class BankToastBanner extends StatefulWidget {
+  /// Visual variant that determines the background colour and leading icon.
+  final BankToastVariant variant;
+
+  /// The message text displayed in the banner.
+  final String message;
+
+  /// Optional label for an action button inside the banner.
+  final String? actionLabel;
+
+  /// Callback invoked when the action button is tapped.
+  final VoidCallback? onAction;
+
+  /// Callback invoked when the banner should be dismissed.
+  ///
+  /// This is called both when [autoHideDuration] elapses and when the close
+  /// icon button is tapped. The host must update [isVisible] in response.
+  final VoidCallback? onDismiss;
+
+  /// Whether the banner is currently visible.
+  final bool isVisible;
+
+  /// How long to wait before auto-dismissing the banner.
+  final Duration autoHideDuration;
+
+  /// When `true`, calls [HapticFeedback.lightImpact] when the banner appears.
+  final bool hapticFeedback;
+
+  /// Overrides the content padding. Defaults to [BankTokens.space4]
+  /// horizontal by [BankTokens.space3] vertical.
+  final EdgeInsetsGeometry? padding;
+
+  /// Overrides the banner corner radius. Defaults to
+  /// [BankThemeData.cardRadius].
+  final BorderRadius? radius;
+
+  /// Overrides the banner background. Defaults to [BankThemeData.surface]
+  /// washed with the variant's semantic colour at 10% alpha.
+  final Color? backgroundColor;
+
+  /// Overrides the icon, text, and button colour in one go. When null the
+  /// message and close button use [BankThemeData.onSurface] /
+  /// [BankThemeData.onSurfaceVariant] while the leading icon and action
+  /// label carry the variant's semantic colour.
+  final Color? foregroundColor;
+
+  /// Overrides the banner elevation. Defaults to `4`; pass `0` to
+  /// flatten the banner.
+  final double? elevation;
+
+  /// Overrides the per-variant leading glyph.
+  final IconData? icon;
+
+  /// Merged over the computed message style ([BankTokens.bodyMedium]
+  /// in the foreground colour).
+  final TextStyle? messageStyle;
+
+  /// Semantics label and tooltip of the close button. Defaults to
+  /// 'Dismiss'.
+  final String dismissLabel;
+
+  /// Overrides the live-region label. Defaults to
+  /// '`<variant name>`: `<message>`'.
+  final String? semanticLabel;
+
+  /// Overrides the slide-in duration. Defaults to
+  /// [BankTokens.durationBase].
+  final Duration? animationDuration;
+
+  /// Overrides the slide-in curve. Defaults to
+  /// [BankTokens.curveDecelerate].
+  final Curve? animationCurve;
+
+  const BankToastBanner({
+    required this.variant,
+    required this.message,
+    required this.isVisible,
+    super.key,
+    this.actionLabel,
+    this.onAction,
+    this.onDismiss,
+    this.autoHideDuration = const Duration(seconds: 4),
+    this.hapticFeedback = true,
+    this.padding,
+    this.radius,
+    this.backgroundColor,
+    this.foregroundColor,
+    this.elevation,
+    this.icon,
+    this.messageStyle,
+    this.dismissLabel = 'Dismiss',
+    this.semanticLabel,
+    this.animationDuration,
+    this.animationCurve,
+  });
+
+  @override
+  State<BankToastBanner> createState() => _BankToastBannerState();
+}
+
+class _BankToastBannerState extends State<BankToastBanner>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late Animation<Offset> _slideAnimation;
+  late final Animation<double> _opacityAnimation;
+
+  // Tracks the current dismiss timer so it can be cancelled on rebuild.
+  // We store the _expire timestamp instead of a Timer to avoid import of
+  // dart:async; we use WidgetsBinding instead.
+  bool _autoDismissScheduled = false;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _controller = AnimationController(
+      vsync: this,
+      duration: widget.animationDuration ?? BankTokens.durationBase,
+    );
+
+    _slideAnimation = _buildSlideAnimation();
+
+    _opacityAnimation = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0, 0.6),
+      ),
+    );
+
+    if (widget.isVisible) {
+      _show();
+    }
+  }
+
+  Animation<Offset> _buildSlideAnimation() {
+    return Tween<Offset>(
+      begin: const Offset(0, -1),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: widget.animationCurve ?? BankTokens.curveDecelerate,
+      ),
+    );
+  }
+
+  @override
+  void didUpdateWidget(BankToastBanner old) {
+    super.didUpdateWidget(old);
+    if (widget.animationDuration != old.animationDuration) {
+      _controller.duration =
+          widget.animationDuration ?? BankTokens.durationBase;
+    }
+    if (widget.animationCurve != old.animationCurve) {
+      _slideAnimation = _buildSlideAnimation();
+    }
+    if (widget.isVisible && !old.isVisible) {
+      _show();
+    } else if (!widget.isVisible && old.isVisible) {
+      _hide();
+    }
+  }
+
+  void _show() {
+    _controller.forward(from: 0);
+
+    if (widget.hapticFeedback) {
+      HapticFeedback.lightImpact();
+    }
+
+    if (widget.onDismiss != null && !_autoDismissScheduled) {
+      _autoDismissScheduled = true;
+      Future.delayed(widget.autoHideDuration, () {
+        if (mounted && widget.isVisible) {
+          widget.onDismiss?.call();
+        }
+        _autoDismissScheduled = false;
+      });
+    }
+  }
+
+  void _hide() {
+    _controller.reverse();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  /// Brightness-aware semantic accent of the current variant.
+  Color _semanticColor(BankThemeData theme, Brightness surfaceBrightness) {
+    final dark = surfaceBrightness == Brightness.dark;
+    return switch (widget.variant) {
+      BankToastVariant.success =>
+        dark ? BankTokens.successDark : BankTokens.success,
+      BankToastVariant.error =>
+        dark ? BankTokens.dangerDark : BankTokens.danger,
+      BankToastVariant.info => theme.primary,
+      BankToastVariant.warning =>
+        dark ? BankTokens.warningDark : BankTokens.warning,
+    };
+  }
+
+  IconData _leadingIcon() => switch (widget.variant) {
+        BankToastVariant.success => Icons.check_circle_outline,
+        BankToastVariant.error => Icons.error_outline,
+        BankToastVariant.info => Icons.info_outline,
+        BankToastVariant.warning => Icons.warning_amber_outlined,
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = BankThemeData.of(context);
+
+    // Brightness of the painted surface picks the AA-safe semantic variant
+    // and the hairline strength.
+    final surfaceBrightness =
+        ThemeData.estimateBrightnessForColor(theme.surface);
+    final semantic = _semanticColor(theme, surfaceBrightness);
+
+    // Neutral surface washed with a low-alpha semantic tint; blended so the
+    // banner stays opaque over whatever it slides across.
+    final bg = widget.backgroundColor ??
+        Color.alphaBlend(semantic.withValues(alpha: 0.10), theme.surface);
+    final iconColor = widget.foregroundColor ?? semantic;
+    final messageColor = widget.foregroundColor ?? theme.onSurface;
+    final dismissColor = widget.foregroundColor ?? theme.onSurfaceVariant;
+    final showAction = widget.actionLabel != null && widget.onAction != null;
+    final liveLabel =
+        widget.semanticLabel ?? '${_variantLabel()}: ${widget.message}';
+
+    return Semantics(
+      liveRegion: widget.isVisible,
+      label: widget.isVisible ? liveLabel : null,
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) {
+          if (_controller.value == 0 && !widget.isVisible) {
+            return const SizedBox.shrink();
+          }
+          return FractionalTranslation(
+            translation: _slideAnimation.value,
+            child: Opacity(
+              opacity: _opacityAnimation.value,
+              child: child,
+            ),
+          );
+        },
+        child: RepaintBoundary(
+          child: Material(
+            color: bg,
+            shape: RoundedRectangleBorder(
+              borderRadius: widget.radius ?? theme.cardRadius,
+              side: BorderSide(
+                color: BankTokens.hairlineColor(
+                  theme.onSurface,
+                  surfaceBrightness,
+                ),
+                // Matches BorderSide's default today; keep the token as the
+                // source of truth for hairline geometry.
+                // ignore: avoid_redundant_argument_values
+                width: BankTokens.hairlineWidth,
+              ),
+            ),
+            elevation: widget.elevation ?? 4,
+            child: Padding(
+              padding: widget.padding ??
+                  const EdgeInsets.symmetric(
+                    horizontal: BankTokens.space4,
+                    vertical: BankTokens.space3,
+                  ),
+              child: Row(
+                children: [
+                  Icon(
+                    widget.icon ?? _leadingIcon(),
+                    color: iconColor,
+                    size: 20,
+                  ),
+                  const SizedBox(width: BankTokens.space3),
+                  Expanded(
+                    child: Text(
+                      widget.message,
+                      style: BankTokens.bodyMedium
+                          .copyWith(color: messageColor)
+                          .merge(widget.messageStyle),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (showAction) ...[
+                    const SizedBox(width: BankTokens.space2),
+                    Semantics(
+                      button: true,
+                      label: widget.actionLabel,
+                      child: TextButton(
+                        onPressed: widget.onAction,
+                        style: TextButton.styleFrom(
+                          foregroundColor: iconColor,
+                          minimumSize: const Size(
+                            BankTokens.minTapTarget,
+                            BankTokens.minTapTarget,
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: BankTokens.space2,
+                          ),
+                          textStyle: bankButtonTextStyle(
+                            context,
+                            BankTokens.labelMedium,
+                          ),
+                        ),
+                        child: Text(widget.actionLabel!),
+                      ),
+                    ),
+                  ],
+                  Semantics(
+                    button: true,
+                    label: widget.dismissLabel,
+                    child: IconButton(
+                      icon: const Icon(Icons.close, size: 18),
+                      color: dismissColor,
+                      onPressed: widget.onDismiss,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: BankTokens.minTapTarget,
+                        minHeight: BankTokens.minTapTarget,
+                      ),
+                      tooltip: widget.dismissLabel,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _variantLabel() => switch (widget.variant) {
+        BankToastVariant.success => 'Success',
+        BankToastVariant.error => 'Error',
+        BankToastVariant.info => 'Info',
+        BankToastVariant.warning => 'Warning',
+      };
+}

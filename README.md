@@ -67,29 +67,8 @@ dependencies.
 The project is licensed under [GNU GPL version 3 or later](LICENSE).
 Originally MIT-licensed material retains its applicable copyright and
 permission notice in [`LICENSE-MIT`](LICENSE-MIT). Repository attribution is
-summarized in [`NOTICE`](NOTICE).
+summarized in [`NOTICE`](NOTICE). 
 
-## Create a clean GitHub repository
-
-Create an empty repository at
-[maureenobiekwe/frizz-bank](https://github.com/maureenobiekwe/frizz-bank)
-without initializing it with a README, license, or `.gitignore`. To publish
-the current files with a fresh Git history, make a clean copy that excludes
-the existing `.git` directory, then run:
-
-```powershell
-robocopy . ..\frizz-bank-clean /E /XD .git
-cd ..\frizz-bank-clean
-git init -b main
-git config user.name "Maureen Obiekwe"
-git config user.email "YOUR_GITHUB_NOREPLY_EMAIL"
-git add .
-git commit -m "Initial commit"
-git remote add origin https://github.com/maureenobiekwe/frizz-bank.git
-git push -u origin main
-```
-
-Replace `YOUR_GITHUB_NOREPLY_EMAIL` with the email shown in your GitHub
-settings. GitHub will then show the new initial commit and its author, rather
-than the old repository's commit history. Removing Git history does not remove
-copyright or license obligations for code already included here.
+## Author
+**Maureen Obiekwe**  
+[GitHub](https://github.com/maureenobiekwe) · [Portfolio](https://maureenobiekwe.com)
